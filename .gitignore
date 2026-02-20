@@ -1,0 +1,7 @@
+__pycache__/
+*.py[cod]
+cookie_cache.json
+DL SushiScan/
+*.log
+debug_sushiscan_*.log
+.playwright_profile

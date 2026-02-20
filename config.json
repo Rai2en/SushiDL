@@ -1,0 +1,10 @@
+{
+  "auth_mode": "manual",
+  "manual_links": {
+    "cookie_fr": "https://sushiscan.fr",
+    "cookie_net": "https://sushiscan.net",
+    "user_agent": "https://httpbin.org/user-agent",
+    "cookie_help": "https://github.com/itanivalkyrie/SushiDL?tab=readme-ov-file#-r%C3%A9cup%C3%A9rer-user-agent-et-cf_clearance",
+    "cloudflare_help": "https://github.com/itanivalkyrie/SushiDL?tab=readme-ov-file#-r%C3%A9cup%C3%A9rer-user-agent-et-cf_clearance"
+  }
+}

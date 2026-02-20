@@ -1,28 +1,55 @@
+<p align="center">
+  <img alt="SushiDL banner" src="assets/banner.jpg" />
+</p>
+
 # 🍣 SushiDL – Téléchargeur de mangas avec interface graphique
 
-**SushiDL** est une application Python moderne avec interface Tkinter permettant de télécharger automatiquement des chapitres ou volumes de mangas depuis **[sushiscan.fr](https://sushiscan.fr)** et **[sushiscan.net](https://sushiscan.net)**.  
-Pensé pour être simple, rapide et efficace, il offre des fonctionnalités avancées comme la gestion de cookies Cloudflare, la compatibilité FlareSolverr, la conversion en `.cbz`, et une interface filtrable dynamique.
+**SushiDL** est une application Python moderne avec interface Tkinter permettant de télécharger automatiquement des chapitres ou tomes de mangas depuis **[sushiscan.fr](https://sushiscan.fr)** et **[sushiscan.net](https://sushiscan.net)**.  
+Pensé pour être simple, rapide et efficace, il offre des fonctionnalités avancées comme la gestion de cookies Cloudflare, la conversion en `.cbz`, et une interface filtrable dynamique.
+
+**Version actuelle : `11.1.4`**
 
 ---
 
 ## ✨ Fonctionnalités
 - 🧠 Analyse des chapitres améliorée : prise en charge des chapitres sans `ts_reader.run(...)` via parsing du DOM `#readerarea`
-- 🛡️ Détection automatique de `sushiscan.fr` pour activer FlareSolverr
-- 🔁 Analyse lancée en thread : interface non bloquante pendant le chargement
-- ⏳ Affichage dynamique du message “Chargement de la couverture...” sous le bouton Analyser
-- 🧼 Suppression automatique de l’image de couverture précédente avant affichage de la nouvelle
-- 🖥️ Interface graphique claire (Tkinter)
-- 🔍 Analyse automatique de volumes/chapitres depuis une URL
-- 🎯 Filtrage instantané par mot-clé
-- ✅ Boutons *Tout sélectionner*, *Inverser la sélection*
-- 🧩 Téléchargement intelligent des images (Cloudflare-compatible)
+- 🛡️ Gestion indépendante des cookies `.fr` / `.net`
+- ✍️ Authentification **100% manuelle** (cookies `.fr` / `.net` + User-Agent)
+- 🔗 Placeholders guidés dans les champs :
+  - Cookie `.fr` / `.net` → `Coller ici votre cookie cf_clearance. Cliquer sur "Aide Cookie" si besoin.`
+  - User-Agent (cliquable) → `https://httpbin.org/user-agent`
+- 🌐 Détection des sous-domaines SushiScan (`c1.sushiscan.net`, etc.) pour appliquer automatiquement cookie/UA sur les images et la couverture
+- 🏷️ Libellés d’authentification simplifiés + badges `Valide` / `Invalide` / `A contrôler`
+- 🧩 Téléchargement en accès direct uniquement (pas de fallback FlareSolverr/Playwright/import navigateur)
+- 🧯 Gestion robuste des erreurs : distinction entre page manquante (`404/410`) et ressource bloquée/non téléchargeable
+- ❌ Annulation fiable à tout moment
 - 🖼️ Conversion `.webp` → `.jpg`
 - 📦 Génération automatique de fichiers `.cbz`
-- 💾 Sauvegarde automatique de l'URL du dernier manga
-- 🧠 Paramètres persistants (cookies, UA, FlareSolverr)
-- 📊 Barre de progression par volume
-- 🔐 Compatible FlareSolverr pour contourner Cloudflare
-- 💖 Merci à l’auteur de [21hsmw/flaresolverr:nodriver](https://hub.docker.com/r/21hsmw/flaresolverr) pour cette image optimisée.
+- 📚 Nommage harmonisé en **Tome** (GUI, logs, dossiers, CBZ)
+- 📊 Barre de progression en temps réel
+- 🧾 Logs unifiés GUI + terminal, filtrables (`all/info/success/warning/error/debug/cbz`)
+- 📋 Journal enrichi : copier, exporter, effacer, auto-scroll
+- 🎨 Interface modernisée (look & feel inspiré Breeze : lisibilité, contrastes, espacements)
+- 🧭 Actions de sélection/téléchargement intégrées dans l’en-tête `Tomes / Chapitres`
+- 🏷️ Version affichée au lancement (console + interface)
+- 💾 Paramètres persistants (`cookie_cache.json`) + configuration globale (`config.json`)
+
+---
+
+## 🔢 Versioning & Changelog
+
+Le projet suit le format `X.Y.Z` :
+- `X` = **ÉVOLUTION MAJEURE**
+- `Y` = **AMÉLIORATION** / fonctionnalité secondaire
+- `Z` = **BUGFIX**
+
+Exemples :
+- `10.0.1` = correction de bug
+- `10.1.0` = amélioration/fonctionnalité secondaire
+- `11.0.0` = évolution majeure
+
+📘 Historique des changements : [`CHANGELOG.md`](CHANGELOG.md)
+
 ---
 
 <p align="center">
@@ -79,7 +106,6 @@ git clone https://github.com/itanivalkyrie/SushiDL.git
 cd SushiDL
 ```
 
-
 1. Assurez-vous d’avoir **Python 3.10+**
 2. Installez les dépendances :
 
@@ -97,18 +123,44 @@ pip install -r requirements.txt
 
 ```bash
 cd chemin\vers\le\dossier
-python SushiDL_V10.py
+python SushiDL.py
 ```
 
 ### 🐧 Sous Linux
 
 ```bash
 cd /chemin/vers/le/dossier
-python3 SushiDL_V8.py
+python3 SushiDL.py
 ```
+
 ---
 
 ## 🔐 Récupérer `User-Agent` et `cf_clearance`
+SushiDL est désormais en mode **manuel uniquement**.
+
+1. Ouvrez `https://sushiscan.fr` et `https://sushiscan.net` dans votre navigateur.
+2. Récupérez les cookies `cf_clearance` (un par domaine).
+3. Récupérez votre User-Agent via :
+   - `https://httpbin.org/user-agent`
+   - ou les outils développeur du navigateur.
+4. Collez les valeurs dans l’application puis cliquez sur **Sauvegarder Parametres**.
+
+💡 Dans la GUI, les champs cookies affichent un texte guide (non cliquable) et le champ User-Agent reste cliquable.
+💡 Le bouton **Aide Cookie** ouvre directement la section du README dédiée à la récupération de `cf_clearance` et du `User-Agent`.
+
+### ⚙️ `config.json` (mode manuel)
+
+```json
+{
+  "auth_mode": "manual",
+  "manual_links": {
+    "cookie_fr": "https://sushiscan.fr",
+    "cookie_net": "https://sushiscan.net",
+    "user_agent": "https://httpbin.org/user-agent",
+    "cookie_help": "https://github.com/itanivalkyrie/SushiDL?tab=readme-ov-file#-r%C3%A9cup%C3%A9rer-user-agent-et-cf_clearance"
+  }
+}
+```
 
 ### 📎 Depuis Google Chrome
 
@@ -134,28 +186,12 @@ python3 SushiDL_V8.py
 
 ---
 
-## 🛡️ FlareSolverr – contournement Cloudflare (recommandé)
-
-> ⚠️ Indispensable pour `sushiscan.fr` dans la plupart des cas.
-
-### 🐳 Lancer FlareSolverr avec Docker
-
-```bash
-docker run -d --name flaresolverr -p 8191:8191 21hsmw/flaresolverr:nodriver
-```
-
-- Lancez-le en arrière-plan avec Docker
-- Dans SushiDL, indiquez son URL (ex : `http://localhost:8191`)
-- Cloudflare sera contourné automatiquement
-
----
-
 ## 🔧 Utilisation
 
-1. Lancez `SushiDL_V10.py`
+1. Lancez `SushiDL.py`
 2. Entrez une URL de manga depuis sushiscan.fr ou sushiscan.net
-3. Cliquez sur **Analyser les volumes**
-4. Filtrez, sélectionnez ou inversez les chapitres
+3. Cliquez sur **Analyser**
+4. Filtrez, sélectionnez ou inversez les tomes/chapitres
 5. Cliquez sur **Télécharger** pour générer vos `.cbz`
 
 📁 Les fichiers seront placés dans le dossier `DL SushiScan/`.
@@ -164,19 +200,34 @@ docker run -d --name flaresolverr -p 8191:8191 21hsmw/flaresolverr:nodriver
 
 ## 🧠 Détails techniques
 
+- Pipeline de téléchargement robuste (retry direct uniquement)
+- Distinction des erreurs :
+  - `404/410` = page absente côté serveur (le tome peut être finalisé)
+  - `403/429/...` = blocage/réseau (intervention manuelle requise)
+- Annulation stable pendant les téléchargements parallèles
+- Création de CBZ possible même avec pages manquantes non bloquantes
 - Conversion automatique d’images `.webp` en `.jpg`
 - Génération propre de `.cbz` avec suppression du dossier temporaire
-- Interface fluide avec log d’activité intégré
+- Interface fluide avec journal d’activité avancé
 - Sauvegarde persistante dans `cookie_cache.json`
+- Configuration globale dans `config.json` (mode manuel)
 - Prise en charge de `sushiscan.fr` **et** `sushiscan.net`
-- Filtrage dynamique en temps réel
-- Barre de progression remise à 0 à chaque volume
+
+---
+
+## 📂 Arborescence du projet
+
+- `SushiDL.py` : version principale
+- `legacy_scripts/SushiDL_V9.py` : version historique conservée
+- `tools/remove_last_images_cbz.py` : outil de nettoyage des CBZ
+- `cut_sushiscan_fr/` : scripts de reconstruction/coupe d’images
+- `CHANGELOG.md` : historique des versions et changements
 
 ---
 
 ## 🧹 Script complémentaire : suppression automatique des dernières images `.cbz`
 
-Le script `remove_last_images_cbz_loop.py` permet de nettoyer automatiquement les fichiers `.cbz` contenant des images publicitaires ou parasites ajoutées en fin de chapitre (notamment sur **sushiscan.fr**).
+Le script `tools/remove_last_images_cbz.py` permet de nettoyer automatiquement les fichiers `.cbz` contenant des images publicitaires ou parasites ajoutées en fin de chapitre (notamment sur **sushiscan.fr**).
 
 ---
 
@@ -194,21 +245,19 @@ Le script `remove_last_images_cbz_loop.py` permet de nettoyer automatiquement le
 ### 📌 Exemple d’utilisation :
 
 1. Lancez le script :
-   ```bash
-   python remove_last_images_cbz_loop.py
 
-2. Entrez (ou glissez) un fichier .cbz ou un dossier
+```bash
+python tools/remove_last_images_cbz.py
+```
 
+2. Entrez (ou glissez) un fichier `.cbz` ou un dossier
 3. Indiquez le nombre d’images à supprimer (défaut : 7)
+4. Laissez le script agir. Une sauvegarde `.bak` est créée.
 
-4. Laissez le script agir. Une sauvegarde .bak est créée.
-
-Vous pouvez relancer l’opération autant de fois que nécessaire
+Vous pouvez relancer l’opération autant de fois que nécessaire.
 
 ---
 
 ## 🖼️ Aperçu
 
-<img width="852" height="852" alt="image" src="https://github.com/user-attachments/assets/723aaf0f-31af-4f3a-897d-92da5a26bb66" />
-
-
+<img width="852" alt="SushiDL screenshot" src="assets/screenshot.jpg" />
