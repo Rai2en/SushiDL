@@ -173,6 +173,4 @@ python cut.py "C:\images" --max-overlap-fix-px 6 --overlap-fix-threshold 1.2
 
 ## Notes
 
-- Sur le jeu SushiScan FR analyse, `2132` corrige la derive cumulative de pagination.
-- Le nettoyage des pixels parasites est local (frontiere par frontiere), sans modifier le reste du flux.
 - Le script ne retire pas les watermarks/logos inclus dans les images source.
