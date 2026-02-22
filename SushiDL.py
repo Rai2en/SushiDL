@@ -58,6 +58,37 @@ def configure_console_io():
 configure_console_io()
 
 
+def repair_mojibake_text(text):
+    """
+    Tente de réparer un texte mojibake courant (UTF-8 lu en latin-1/cp1252).
+    Ex: texte mal décodé UTF-8/latin-1 -> texte lisible.
+    """
+    value = str(text or "")
+    if not value:
+        return value
+
+    suspicious_markers = (
+        "\u00C3",
+        "\u00C2",
+        "\u00E2\u20AC\u2122",
+        "\u00E2\u20AC\u0153",
+        "\u00E2\u20AC",
+        "\u00F0\u0178",
+        "\u00EF\u00BB\u00BF",
+    )
+    if not any(marker in value for marker in suspicious_markers):
+        return value
+
+    for codec in ("latin-1", "cp1252"):
+        try:
+            fixed = value.encode(codec).decode("utf-8")
+            if fixed:
+                return fixed
+        except Exception:
+            continue
+    return value
+
+
 class DownloadCancelled(Exception):
     """Erreur levée lorsqu'une annulation utilisateur est demandée."""
 
@@ -284,15 +315,13 @@ def robust_download_image(img_url, headers, max_try=4, delay=2, cancel_event=Non
 
 # Expressions régulières et constantes globales
 APP_NAME = "SushiDL"
-APP_VERSION = "11.1.4"
+APP_VERSION = "11.1.9"
 REGEX_URL = r"^https://sushiscan\.(fr|net)/catalogue/[a-z0-9-]+/$"  # Format des URLs valides
 ROOT_FOLDER = "DL SushiScan"  # Dossier racine pour les téléchargements
 THREADS = 3  # Nombre de threads pour le téléchargement parallèle
 BASE_DIR = Path(__file__).resolve().parent
 COOKIE_CACHE_PATH = BASE_DIR / "cookie_cache.json"  # Fichier de cache pour les cookies
 CONFIG_PATH = BASE_DIR / "config.json"  # Configuration globale de l'application
-COOKIE_MAX_AGE_SECONDS = 3600  # Durée indicative de validité cookie (Cloudflare évolue)
-COOKIE_REVIEW_AGE_SECONDS = 86400  # Au-delà: statut "A contrôler"
 DEFAULT_USER_AGENT = (
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
     "AppleWebKit/537.36 (KHTML, like Gecko) "
@@ -404,10 +433,19 @@ def get_manual_link(config_key, default_value):
 
 def strip_console_unsafe_chars(text):
     """Retire certains symboles non ASCII (notamment emojis) en console Windows."""
+    value = repair_mojibake_text(text or "")
     if os.name != "nt":
-        return text
-    # Supprime les emojis puis translittère en ASCII pour éviter tout mojibake.
-    value = re.sub(r"[\U0001F300-\U0001FAFF\u2600-\u27BF\ufe0f]", "", text or "")
+        return value
+
+    # Supprime les emojis pour éviter les glyphes non supportés.
+    value = re.sub(r"[\U0001F300-\U0001FAFF\u2600-\u27BF\ufe0f]", "", value)
+
+    # Si la console est bien en UTF, on conserve les accents.
+    encoding = (getattr(sys.stdout, "encoding", "") or "").lower()
+    if "utf" in encoding:
+        return value
+
+    # Fallback consoles legacy: translittération ASCII.
     value = unicodedata.normalize("NFKD", value)
     return value.encode("ascii", errors="ignore").decode("ascii", errors="ignore")
 
@@ -458,7 +496,7 @@ def format_console_line(message, level="info", context=None, timestamp=None, wit
     lvl = normalize_log_level(level)
     ts = timestamp or time.strftime("%H:%M:%S")
     emoji = (LOG_EMOJIS.get(lvl, "") + " ") if with_emoji else ""
-    safe_message = strip_console_unsafe_chars(message)
+    safe_message = strip_console_unsafe_chars(repair_mojibake_text(message))
     ctx = format_log_context(context)
     return f"[{ts}] {emoji}{safe_message}{ctx}"
 
@@ -488,7 +526,7 @@ def runtime_log(message, level="info", context=None):
     Route un message vers le logger GUI quand disponible,
     sinon vers la console uniquement.
     """
-    text = str(message or "").strip()
+    text = repair_mojibake_text(str(message or "").strip())
     if not text:
         return
 
@@ -825,7 +863,7 @@ def download_image(
         if progress_callback:
             progress_callback(i + 1)
         if hasattr(MangaApp, "current_instance") and hasattr(MangaApp.current_instance, "log"):
-            MangaApp.current_instance.log(f"Image {i + 1} téléchargee : {os.path.basename(filename)}", level="info")
+            MangaApp.current_instance.log(f"Image {i + 1} téléchargée : {os.path.basename(filename)}", level="info")
         return
 
     except DownloadCancelled:
@@ -842,7 +880,7 @@ def download_image(
             return
         register_failure(e.kind, str(e), status_code=e.status_code)
         runtime_log(
-            f"Echec direct après retries: {e}",
+            f"Échec direct après retries: {e}",
             level="warning",
             context={"action": "download", "url": normalized_url},
         )
@@ -852,7 +890,7 @@ def download_image(
         kind = classify_download_failure(status_code, str(e))
         register_failure(kind, str(e), status_code=status_code)
         runtime_log(
-            f"Echec direct après retries: {e}",
+            f"Échec direct après retries: {e}",
             level="warning",
             context={"action": "download", "url": normalized_url},
         )
@@ -954,7 +992,7 @@ def fetch_manga_data(url, cookie, ua):
         if final_url and final_url != url:
             detail += f" -> {final_url}"
         if int(getattr(r, "status_code", 0) or 0) == 403:
-            detail += " | Vérifie le User-Agent"
+            detail += " | Vérifie le cookie cf_clearance du domaine"
         raise Exception(f"Accès refusé ou URL invalide ({detail})")
 
     return parse_manga_data_from_html(url, r.text or "")
@@ -1253,7 +1291,7 @@ def download_volume(
         sample_hard = hard_failures[0]
         sample_reason = sample_hard.get("reason") or "cause inconnue"
         logger(
-            f"{len(hard_failures)} image(s) bloquee(s)/non telechargeable(s) sur {tome_label}. Exemple: {sample_reason}",
+            f"{len(hard_failures)} image(s) bloquée(s)/non téléchargeable(s) sur {tome_label}. Exemple: {sample_reason}",
             level="warning",
         )
         if cancel_event.is_set():
@@ -1292,7 +1330,7 @@ def download_volume(
                     return None
                 if new_cookie:
                     shutil.rmtree(folder, ignore_errors=True)
-                    logger("Ancien dossier supprime. Relancement du telechargement avec le nouveau cookie...", level="info")
+                    logger("Ancien dossier supprimé. Relancement du téléchargement avec le nouveau cookie...", level="info")
                     return download_volume(
                         volume,
                         images,
@@ -1306,7 +1344,7 @@ def download_volume(
                         webp2jpg_enabled,
                         referer_url,
                     )
-                logger("Aucun cookie saisi. Le tome ne sera pas complete.", level="error")
+                logger("Aucun cookie saisi. Le tome ne sera pas complété.", level="error")
         except Exception as e:
             logger(f"Erreur durant la relance : {e}", level="error")
         return False
@@ -1319,7 +1357,7 @@ def download_volume(
 
     file_count = sum(len(files) for _, _, files in os.walk(folder))
     if file_count == 0:
-        logger(f"Aucune image telechargee pour {tome_label}.", level="error")
+        logger(f"Aucune image téléchargée pour {tome_label}.", level="error")
         return False
 
     if cbz_enabled:
@@ -1703,29 +1741,112 @@ class MangaApp:
             parent=self.root,
         )
 
+    def _reset_analysis_auth_state(self, reset_domains=("fr", "net"), reset_ua=True, clear_label=True):
+        """Réinitialise l'état d'auth d'analyse (par domaine et/ou UA)."""
+        if not hasattr(self, "analysis_auth_state") or not isinstance(self.analysis_auth_state, dict):
+            self.analysis_auth_state = {"fr": None, "net": None, "ua": None}
+        domains = tuple(reset_domains or ())
+        for domain in domains:
+            if domain in ("fr", "net"):
+                self.analysis_auth_state[domain] = None
+        if reset_ua:
+            self.analysis_auth_state["ua"] = None
+        self.analysis_auth_last_domain = None
+        self.analysis_auth_last_message = ""
+        if clear_label and hasattr(self, "status_label"):
+            self.run_on_ui(lambda: self.status_label.config(text="", foreground="#5f6f88"))
+
     def _schedule_auth_status_update(self, *_args):
-        """Rafraîchit rapidement les badges/labels auth sans revalidation réseau agressive."""
+        """Rafraîchit les badges auth sans invalider l'état d'analyse en mémoire."""
         if not hasattr(self, "cookie_sources"):
             return
-        self.ua_runtime_validity = None
         self.run_on_ui(lambda: self.update_cookie_status(validate=False))
+        self.run_on_ui(self.update_runtime_status)
+
+    def _schedule_auth_status_update_cookie_fr(self, *_args):
+        """Rafraîchit les badges auth après modification du cookie .fr sans reset global."""
+        if not hasattr(self, "cookie_sources"):
+            return
+        self.run_on_ui(lambda: self.update_cookie_status(validate=False))
+        self.run_on_ui(self.update_runtime_status)
+
+    def _schedule_auth_status_update_cookie_net(self, *_args):
+        """Rafraîchit les badges auth après modification du cookie .net sans reset global."""
+        if not hasattr(self, "cookie_sources"):
+            return
+        self.run_on_ui(lambda: self.update_cookie_status(validate=False))
+        self.run_on_ui(self.update_runtime_status)
+
+    def _schedule_auth_status_update_url(self, *_args):
+        """Rafraîchit les badges auth au changement d'URL sans effacer l'historique d'analyse."""
+        if not hasattr(self, "cookie_sources"):
+            return
+        self.run_on_ui(lambda: self.update_cookie_status(validate=False))
+        self.run_on_ui(self.update_runtime_status)
 
     def _source_to_display(self, source):
         _ = source
         return ""
 
     def _set_auth_badge(self, widget, state):
-        """Applique un badge visuel pour statut auth: valide / invalide / a_controler."""
+        """Applique un badge visuel pour statut auth: en_attente / valid / verify."""
         if isinstance(state, bool):
             normalized = "valid" if state else "invalid"
         else:
             normalized = str(state or "").strip().lower()
-        if normalized in ("a_controler", "review", "warning", "check"):
-            widget.config(text="A Contrôler", bg="#FFC067", fg="#1f2937")
+        if normalized in ("pending", "en_attente", "waiting"):
+            widget.config(text="En attente", bg="#FFC067", fg="#1f2937")
         elif normalized in ("valid", "ok", "true", "1"):
-            widget.config(text="Valide", bg="#ADEBB3", fg="#1f2937")
+            widget.config(text="Validée", bg="#ADEBB3", fg="#1f2937")
         else:
-            widget.config(text="Invalide", bg="#FA003F", fg="#ffffff")
+            widget.config(text="À vérifier", bg="#FA003F", fg="#ffffff")
+
+    def _set_analysis_status_label(self, text, success=None):
+        """Affiche un retour court sur le résultat d'analyse auth."""
+        if not hasattr(self, "status_label"):
+            return
+        if success is True:
+            color = "#0f9d58"
+        elif success is False:
+            color = "#d93025"
+        else:
+            color = "#2f73d9"
+        self.status_label.config(text=(text or ""), foreground=color)
+
+    def _mark_analysis_auth_state(self, domain, success, message=""):
+        """Mémorise un résultat auth basé sur une analyse réelle."""
+        if domain not in ("fr", "net"):
+            return
+        normalized_success = bool(success)
+        if not hasattr(self, "analysis_auth_state") or not isinstance(self.analysis_auth_state, dict):
+            self.analysis_auth_state = {"fr": None, "net": None, "ua": None}
+        self.analysis_auth_state[domain] = normalized_success
+        # Ne pas invalider le User-Agent sur un échec domaine: 403 est souvent cookie-only.
+        if normalized_success:
+            self.analysis_auth_state["ua"] = True
+        elif not self.get_direct_user_agent().strip():
+            self.analysis_auth_state["ua"] = False
+        self.analysis_auth_last_domain = domain
+        self.analysis_auth_last_message = (message or "").strip()
+        if normalized_success:
+            cookie_value = getattr(self, f"cookie_{domain}").get().strip()
+            self._mark_cookie_updated(domain, cookie_value)
+
+        label_text = (
+            f"Auth .{domain} validée (liste chargée)"
+            if normalized_success
+            else (
+                f"Auth .{domain} non validée (vérifier cookie .{domain})"
+                if self.get_direct_user_agent().strip()
+                else f"Auth .{domain} non validée (vérifier cookie .{domain} + User-Agent)"
+            )
+        )
+        if self.analysis_auth_last_message:
+            label_text = f"{label_text} - {self.analysis_auth_last_message}"
+
+        self.run_on_ui(lambda: self._set_analysis_status_label(label_text, success=normalized_success))
+        self.run_on_ui(lambda: self.update_cookie_status(validate=False))
+        self.run_on_ui(self.update_runtime_status)
 
     def _mark_cookie_updated(self, domain, cookie_value):
         """Met à jour le timestamp local de changement cookie pour le domaine."""
@@ -1739,26 +1860,6 @@ class MangaApp:
         else:
             self.cookie_updated_at[domain] = ""
 
-    def _is_cookie_stale_for_review(self, domain):
-        """Retourne True si le cookie dépasse le seuil d'ancienneté de contrôle."""
-        if domain not in ("fr", "net"):
-            return False
-        cookie_value = getattr(self, f"cookie_{domain}").get().strip()
-        if not cookie_value:
-            return False
-        ts_raw = (getattr(self, "cookie_updated_at", {}).get(domain) or "").strip()
-        if not ts_raw:
-            return False
-        normalized = ts_raw.replace("Z", "+00:00")
-        try:
-            ts = datetime.datetime.fromisoformat(normalized)
-        except Exception:
-            return False
-        if ts.tzinfo is None:
-            ts = ts.replace(tzinfo=datetime.timezone.utc)
-        age_seconds = (datetime.datetime.now(datetime.timezone.utc) - ts).total_seconds()
-        return age_seconds >= COOKIE_REVIEW_AGE_SECONDS
-
     def _refresh_auth_labels(self, active_domain=None):
         """Met à jour les intitulés auth en mode manuel."""
         _ = active_domain
@@ -1768,6 +1869,7 @@ class MangaApp:
 
     def update_cookie_status(self, validate=True):
         """Met à jour badges et libellés de source pour cookies/UA."""
+        _ = validate
         try:
             if not hasattr(self, "cookie_sources"):
                 return
@@ -1778,44 +1880,35 @@ class MangaApp:
                 return
 
             for domain in ("fr", "net"):
-                cookie = getattr(self, f"cookie_{domain}").get().strip()
-                valid = False
-                if cookie:
-                    should_validate = validate and ((not active_domain) or active_domain == domain)
-                    if should_validate:
-                        probe_url = current_url if active_domain == domain else None
-                        ua = self.get_request_user_agent_for_domain(domain)
-                        eval_state = evaluate_cookie_and_challenge(domain, cookie, ua, probe_url=probe_url)
-                        valid = bool(eval_state.get("cookie_valid", False))
-                    else:
-                        # Domaine non actif: on ne reteste pas immédiatement en réseau.
-                        # Si un cookie est présent, on garde un état "valide provisoire"
-                        # pour éviter un badge rouge trompeur au démarrage.
-                        if validate:
-                            valid = True
-                        else:
-                            valid = bool(self.auth_validity.get(domain, True))
+                analysis_domain_state = (getattr(self, "analysis_auth_state", {}) or {}).get(domain)
+
+                badge = self.cookie_fr_status if domain == "fr" else self.cookie_net_status
+                if analysis_domain_state is True:
+                    badge_state = "valid"
+                    valid = True
+                elif analysis_domain_state is False:
+                    badge_state = "invalid"
+                    valid = False
                 else:
+                    # Avant analyse (ou reset explicite), on attend le verdict.
+                    badge_state = "pending"
                     valid = False
                 self.auth_validity[domain] = valid
-                badge = self.cookie_fr_status if domain == "fr" else self.cookie_net_status
-                badge_state = "valid" if valid else "invalid"
-                if valid and self._is_cookie_stale_for_review(domain):
-                    badge_state = "a_controler"
                 self._set_auth_badge(badge, badge_state)
 
-            raw_ua = self.run_on_ui(self.ua.get, wait=True, default="").strip()
-            ua_domain = active_domain if active_domain in ("fr", "net") else ""
-            if not ua_domain:
-                ua_domain = "net" if self.cookie_net.get().strip() else "fr"
-            domain_cookie = getattr(self, f"cookie_{ua_domain}").get().strip() if ua_domain in ("fr", "net") else ""
-            _ = ua_domain
-            _ = domain_cookie
-            ua_valid = bool(raw_ua)
-            if getattr(self, "ua_runtime_validity", None) is not None:
-                ua_valid = ua_valid and bool(self.ua_runtime_validity)
+            analysis_ua_state = (getattr(self, "analysis_auth_state", {}) or {}).get("ua")
+            ua_present = bool(self.get_direct_user_agent().strip())
+            if analysis_ua_state is True:
+                ua_badge_state = "valid"
+                ua_valid = True
+            elif not ua_present:
+                ua_badge_state = "invalid"
+                ua_valid = False
+            else:
+                ua_badge_state = "pending"
+                ua_valid = False
             self.auth_validity["ua"] = ua_valid
-            self._set_auth_badge(self.ua_status, ua_valid)
+            self._set_auth_badge(self.ua_status, ua_badge_state)
         except Exception as e:
             self.log(f"Erreur statut cookies: {e}", level="error")
 
@@ -1843,8 +1936,24 @@ class MangaApp:
                 "none": "aucun",
             }
             source_display = source_display_map.get(source.lower(), source or "aucun")
+            analysis_state = None
+            analysis_ua_state = None
+            if domain in ("fr", "net"):
+                analysis_state = (getattr(self, "analysis_auth_state", {}) or {}).get(domain)
+                analysis_ua_state = (getattr(self, "analysis_auth_state", {}) or {}).get("ua")
+            ua_present = bool(self.get_direct_user_agent().strip())
+            if analysis_state is True and (analysis_ua_state is True or ua_present):
+                auth_state = "validée par analyse"
+            elif analysis_state is False:
+                auth_state = (
+                    f"échec: vérifier cookie .{domain}"
+                    if ua_present
+                    else f"échec: vérifier cookie .{domain} + User-Agent"
+                )
+            else:
+                auth_state = "en attente d'analyse"
             self.runtime_status.set(
-                f"Domaine actif: {domain} | Cookie: {cookie_state} ({source_display}) | Auth: manuel"
+                f"Domaine actif: {domain} | Cookie: {cookie_state} ({source_display}) | Auth: {auth_state}"
             )
         except Exception as exc:
             self.runtime_status.set(f"Statut indisponible: {exc}")
@@ -1887,13 +1996,16 @@ class MangaApp:
         self.auth_validity = {"fr": False, "net": False, "ua": False}
         self.local_ua_source = "manual"
         self.ua_runtime_validity = None
+        self.analysis_auth_state = {"fr": None, "net": None, "ua": None}
+        self.analysis_auth_last_domain = None
+        self.analysis_auth_last_message = ""
         self.url.trace_add("write", self._schedule_runtime_status_update)
         self.cookie_fr.trace_add("write", self._schedule_runtime_status_update)
         self.cookie_net.trace_add("write", self._schedule_runtime_status_update)
-        self.cookie_fr.trace_add("write", self._schedule_auth_status_update)
-        self.cookie_net.trace_add("write", self._schedule_auth_status_update)
+        self.cookie_fr.trace_add("write", self._schedule_auth_status_update_cookie_fr)
+        self.cookie_net.trace_add("write", self._schedule_auth_status_update_cookie_net)
         self.ua.trace_add("write", self._schedule_auth_status_update)
-        self.url.trace_add("write", self._schedule_auth_status_update)
+        self.url.trace_add("write", self._schedule_auth_status_update_url)
 
         # Chargement du cache
         (
@@ -1979,14 +2091,13 @@ class MangaApp:
         self.root.after(30, self.process_ui_queue)
         self.update_cookie_status(validate=False)
         self.update_runtime_status()
-        self.check_cookie_age_periodically()
 
         self.log(f"Application démarrée - {APP_NAME} v{APP_VERSION}.", level="info")
         self.root.mainloop()
 
     def log(self, message, level="info", context=None):
         """Ajoute une entrée de log unifiée (GUI + terminal)."""
-        text = str(message or "").strip()
+        text = repair_mojibake_text(str(message or "").strip())
         if not text:
             return
 
@@ -2301,10 +2412,10 @@ class MangaApp:
         self.cookie_fr_entry.grid(row=row, column=1, pady=4, sticky="ew")
         self.cookie_fr_status = tk.Label(
             config_card,
-            text="Invalide",
+            text="En attente",
             font=("Segoe UI Semibold", 9),
-            fg="#ffffff",
-            bg="#FA003F",
+            fg="#1f2937",
+            bg="#FFC067",
             padx=10,
             pady=3,
             relief="solid",
@@ -2328,10 +2439,10 @@ class MangaApp:
         self.cookie_net_entry.grid(row=row, column=1, pady=4, sticky="ew")
         self.cookie_net_status = tk.Label(
             config_card,
-            text="Invalide",
+            text="En attente",
             font=("Segoe UI Semibold", 9),
-            fg="#ffffff",
-            bg="#FA003F",
+            fg="#1f2937",
+            bg="#FFC067",
             padx=10,
             pady=3,
             relief="solid",
@@ -2353,10 +2464,10 @@ class MangaApp:
         self.ua_entry.grid(row=row, column=1, pady=4, sticky="ew")
         self.ua_status = tk.Label(
             config_card,
-            text="Invalide",
+            text="En attente",
             font=("Segoe UI Semibold", 9),
-            fg="#ffffff",
-            bg="#FA003F",
+            fg="#1f2937",
+            bg="#FFC067",
             padx=10,
             pady=3,
             relief="solid",
@@ -2929,15 +3040,20 @@ class MangaApp:
 
     def load_volumes(self):
         """Charge la liste des tomes/chapitres pour l'URL donnée"""
-        self.update_cookie_status(validate=False)
+        self._set_analysis_status_label("Analyse en cours...", success=None)
         url = self.url.get().strip()
         if not re.match(REGEX_URL, url):
             self.log("URL invalide. Format attendu: https://sushiscan.fr|net/catalogue/slug/", level="error")
+            self._set_analysis_status_label("URL invalide", success=False)
             self.toast("URL invalide")
             return
         cookie = self.get_cookie(url)
         ua_for_url = self.get_request_user_agent_for_url(url)
         domain = self.get_domain_from_url(url)
+        if domain in ("fr", "net"):
+            self._reset_analysis_auth_state(reset_domains=(domain,), reset_ua=False, clear_label=False)
+            self.update_cookie_status(validate=False)
+            self.update_runtime_status()
         if not cookie and domain in ("fr", "net"):
             self.log(
                 f"Cookie .{domain} vide: si Cloudflare demande un challenge, renseigne cf_clearance manuellement.",
@@ -2951,15 +3067,66 @@ class MangaApp:
                 url, cookie, ua_for_url
             )
             self.ua_runtime_validity = bool((ua_for_url or "").strip())
+            if domain in ("fr", "net"):
+                if self.pairs:
+                    self._mark_analysis_auth_state(
+                        domain,
+                        True,
+                        f"{len(self.pairs)} tome(s)/chapitre(s) détecté(s)",
+                    )
+                    self.log(
+                        f"Auth .{domain} validée par analyse: cookie + User-Agent OK.",
+                        level="success",
+                    )
+                else:
+                    self._mark_analysis_auth_state(domain, False, "liste vide")
+                    self.log(
+                        (
+                            f"Auth .{domain} non validée: vérifie le cookie cf_clearance .{domain}."
+                            if ua_for_url.strip()
+                            else f"Auth .{domain} non validée: vérifie le cookie cf_clearance .{domain} et le User-Agent."
+                        ),
+                        level="warning",
+                    )
             self.update_cookie_status(validate=True)
         except Exception as exc:
-            self.log(f"Erreur : {str(exc)}", level="error")
-            if "HTTP 403" in str(exc):
+            error_text = str(exc)
+            self.log(f"Erreur : {error_text}", level="error")
+            lowered = error_text.lower()
+            auth_related = any(
+                marker in lowered
+                for marker in (
+                    "http 403",
+                    "accès refusé",
+                    "acces refuse",
+                    "forbidden",
+                    "cloudflare",
+                    "challenge",
+                    "cookie",
+                )
+            )
+            if domain in ("fr", "net"):
+                fail_reason = "échec d'authentification" if auth_related else "analyse échouée"
+                self._mark_analysis_auth_state(domain, False, fail_reason)
                 self.log(
-                    "HTTP 403 détecté: vérifie ton User-Agent (et qu'il correspond à ton navigateur courant).",
+                    (
+                        f"Auth .{domain} non validée: vérifie le cookie cf_clearance .{domain}."
+                        if ua_for_url.strip()
+                        else f"Auth .{domain} non validée: vérifie le cookie cf_clearance .{domain} et le User-Agent."
+                    ),
                     level="warning",
                 )
-                self.ua_runtime_validity = False
+            else:
+                self._set_analysis_status_label("Analyse échouée (auth non concluante)", success=None)
+            if "http 403" in lowered or "accès refusé" in lowered or "acces refuse" in lowered:
+                self.log(
+                    (
+                        f"HTTP 403 détecté: vérifie le cookie cf_clearance .{domain}."
+                        if ua_for_url.strip() and domain in ("fr", "net")
+                        else "HTTP 403 détecté: vérifie le cookie cf_clearance du domaine et le User-Agent."
+                    ),
+                    level="warning",
+                )
             self.update_cookie_status(validate=True)
             self.toast("Impossible de charger la liste")
             return
@@ -3247,7 +3414,7 @@ class MangaApp:
             # Tentative de récupération des échecs
             if not self.cancel_event.is_set() and failed:
                 self.log(
-                    f"Retry des tomes echoues ({len(failed)} restants)",
+                    f"Retry des tomes échoués ({len(failed)} restants)",
                     level="warning",
                 )
                 retry_failed = []
@@ -3259,7 +3426,7 @@ class MangaApp:
                     ua = self.get_request_user_agent_for_url(link)
                     images = get_images(link, cookie, ua)
                     if images:
-                        self.log(f"Retry reussi : {vol}", level="info")
+                        self.log(f"Retry réussi : {vol}", level="info")
                         retry_result = download_volume(
                             vol,
                             images,
@@ -3278,12 +3445,12 @@ class MangaApp:
                         if retry_result is None and self.cancel_event.is_set():
                             break
                     else:
-                        self.log(f"Retry echoue : {vol}", level="error")
+                        self.log(f"Retry échoué : {vol}", level="error")
                         retry_failed.append(vol)
 
                 if retry_failed:
                     self.log(
-                        f"Tomes definitivement echoues : {', '.join(retry_failed)}",
+                        f"Tomes définitivement échoués : {', '.join(retry_failed)}",
                         level="error",
                     )
 
@@ -3306,65 +3473,11 @@ class MangaApp:
         self.log("Annulation demandée...", level="warning")
         self.cancel_button.config(state="disabled")
 
-    def check_cookie_age_periodically(self):
-        """Vérifie périodiquement l'âge des cookies"""
-        try:
-            if COOKIE_CACHE_PATH.exists():
-                with COOKIE_CACHE_PATH.open("r", encoding="utf-8") as f:
-                    data = json.load(f)
-
-                now = datetime.datetime.now(datetime.timezone.utc)
-                cookie_map = data.get("cookies", {}) if isinstance(data.get("cookies"), dict) else {}
-                per_cookie_ts = data.get("cookie_updated_at", {})
-                if not isinstance(per_cookie_ts, dict):
-                    per_cookie_ts = {}
-
-                # Compat: fallback timestamp global si pas de timestamp par domaine
-                global_ts_raw = data.get("timestamp")
-                global_ts = None
-                if global_ts_raw:
-                    try:
-                        global_ts = datetime.datetime.fromisoformat(global_ts_raw)
-                    except Exception:
-                        global_ts = None
-
-                stale_domains = []
-                for domain in ("fr", "net"):
-                    cookie = (cookie_map.get(domain) or "").strip()
-                    if not cookie:
-                        continue
-
-                    ts_raw = per_cookie_ts.get(domain) or ""
-                    ts = None
-                    if ts_raw:
-                        try:
-                            ts = datetime.datetime.fromisoformat(ts_raw)
-                        except Exception:
-                            ts = None
-                    if ts is None:
-                        ts = global_ts
-                    if ts is None:
-                        continue
-
-                    age = (now - ts).total_seconds()
-                    if age > COOKIE_MAX_AGE_SECONDS:
-                        stale_domains.append(domain)
-
-                if stale_domains:
-                    self.log(
-                        f"Cookie potentiellement expiré ({', '.join(stale_domains)}), "
-                        "mise a jour manuelle recommandee.",
-                        level="warning",
-                    )
-        except Exception as e:
-            self.log(f"Erreur vérification cookie: {e}", level="error")
-        self.root.after(3600000, self.check_cookie_age_periodically)  # Re-programme après 1h
-
     def save_current_cookie(self):
         """Sauvegarde les paramètres actuels dans le cache"""
         try:
             self.persist_settings()
-            self.log("Cookies, UA, CBZ, WEBP->JPG et preferences logs sauvegardes !", level="success")
+            self.log("Cookies, UA, CBZ, WEBP->JPG et préférences logs sauvegardées !", level="success")
             self.update_cookie_status()
             self.update_runtime_status()
         except Exception as e:

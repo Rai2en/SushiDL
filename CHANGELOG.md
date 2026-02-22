@@ -7,6 +7,49 @@ Le format de version suit la regle `X.Y.Z` :
 - `Y` = amelioration / nouvelle fonctionnalite secondaire
 - `Z` = correctif (bugfix)
 
+## [11.1.9] - 2026-02-22
+
+### Corrections
+- Echec d'analyse auth sur un domaine (`.fr`/`.net`) ne force plus l'invalidation du badge `User-Agent`.
+- Les messages d'erreur d'auth orientent d'abord vers le cookie `cf_clearance` du domaine en echec.
+- Le statut runtime en echec devient prioritairement `verifier cookie .fr/.net` (et `+ User-Agent` seulement si UA vide).
+- Le reset d'analyse au lancement de `Analyser` ne reinitialise plus l'etat UA a `A verifier`.
+- Sur `HTTP 403`, le detail `fetch_manga_data` cible maintenant le cookie domaine plutot que le User-Agent.
+
+## [11.1.8] - 2026-02-22
+
+### Corrections
+- Suppression de la logique d'anciennete des cookies dans le statut auth (plus d'alerte automatique basee sur le temps).
+- Nouveau flux de badges auth:
+  - etat initial `En attente` (orange),
+  - apres analyse reussie: `Validee` (vert) pour le cookie du domaine analyse et le User-Agent,
+  - apres analyse echouee: `A verifier` (rouge) avec message explicite pour verifier cookie `.fr/.net` + User-Agent.
+- Les badges ne se reinitialisent plus automatiquement lors d'une simple modification de champ; le verdict depend du resultat d'analyse.
+- Barre de statut runtime alignee sur ce flux: `en attente d'analyse` / `validee par analyse` / `echec: verifier cookie + User-Agent`.
+
+## [11.1.6] - 2026-02-22
+
+### Corrections
+- Badges cookies `.fr` / `.net` au demarrage:
+  - si un cookie est renseigne mais non encore teste par `Analyser`, l'etat n'apparait plus `Invalide` par defaut,
+  - l'etat devient provisoire (puis confirme par le resultat d'analyse),
+  - un echec d'analyse continue de forcer l'etat `Invalide` jusqu'a nouvelle saisie ou nouvelle analyse.
+
+## [11.1.5] - 2026-02-22
+
+### Corrections
+- Retour utilisateur auth ameliore lors de `Analyser`:
+  - si la liste tomes/chapitres est chargee, le cookie et le User-Agent du domaine actif sont marques valides,
+  - en echec d'auth (`403`, challenge, acces refuse), badges mis en echec et message explicite dans les logs.
+- Ajout d'un message de statut contextuel a cote du bouton `Analyser`:
+  - `Analyse en cours...`,
+  - `Auth .fr/.net validee (liste chargee)`,
+  - ou message d'echec/non conclusion.
+- Barre d'etat runtime enrichie avec etat auth:
+  - `validee par analyse`,
+  - `en echec (analyse)`,
+  - `manuel (non teste)`.
+
 ## [11.1.4] - 2026-02-20
 
 ### Corrections
