@@ -315,7 +315,7 @@ def robust_download_image(img_url, headers, max_try=4, delay=2, cancel_event=Non
 
 # Expressions régulières et constantes globales
 APP_NAME = "SushiDL"
-APP_VERSION = "11.1.9"
+APP_VERSION = "11.2.0"
 REGEX_URL = r"^https://sushiscan\.(fr|net)/catalogue/[a-z0-9-]+/$"  # Format des URLs valides
 ROOT_FOLDER = "DL SushiScan"  # Dossier racine pour les téléchargements
 THREADS = 3  # Nombre de threads pour le téléchargement parallèle
@@ -1760,6 +1760,9 @@ class MangaApp:
         """Rafraîchit les badges auth sans invalider l'état d'analyse en mémoire."""
         if not hasattr(self, "cookie_sources"):
             return
+        # Toute modification UA remet le statut UA en attente (ou invalide si vide).
+        if hasattr(self, "analysis_auth_state") and isinstance(self.analysis_auth_state, dict):
+            self.analysis_auth_state["ua"] = None if self.get_direct_user_agent().strip() else False
         self.run_on_ui(lambda: self.update_cookie_status(validate=False))
         self.run_on_ui(self.update_runtime_status)
 
@@ -1795,7 +1798,7 @@ class MangaApp:
         else:
             normalized = str(state or "").strip().lower()
         if normalized in ("pending", "en_attente", "waiting"):
-            widget.config(text="En attente", bg="#FFC067", fg="#1f2937")
+            widget.config(text="En attente", bg="#FFD8A8", fg="#4A2E00")
         elif normalized in ("valid", "ok", "true", "1"):
             widget.config(text="Validée", bg="#ADEBB3", fg="#1f2937")
         else:
@@ -1958,6 +1961,43 @@ class MangaApp:
         except Exception as exc:
             self.runtime_status.set(f"Statut indisponible: {exc}")
 
+    def _schedule_startup_ua_probe(self):
+        """Lance un micro-test User-Agent en fond sur le domaine actif."""
+        if not self.get_direct_user_agent().strip():
+            return
+        threading.Thread(target=self._run_startup_ua_probe, daemon=True).start()
+
+    def _run_startup_ua_probe(self):
+        """Micro-test léger: une requête racine sur le domaine actif (.fr/.net)."""
+        try:
+            ua_value = self.get_direct_user_agent().strip()
+            if not ua_value:
+                return
+
+            current_url = self.run_on_ui(self.url.get, wait=True, default="").strip()
+            domain = self.get_domain_from_url(current_url)
+            if domain not in ("fr", "net"):
+                self.log("Micro-test User-Agent ignoré: aucun domaine actif .fr/.net.", level="debug")
+                return
+
+            probe_url = f"https://sushiscan.{domain}/"
+            response = make_request(probe_url, "", ua_value)
+            status_code = int(getattr(response, "status_code", 0) or 0)
+            if status_code <= 0:
+                return
+
+            if not hasattr(self, "analysis_auth_state") or not isinstance(self.analysis_auth_state, dict):
+                self.analysis_auth_state = {"fr": None, "net": None, "ua": None}
+            self.analysis_auth_state["ua"] = True
+            self.run_on_ui(lambda: self.update_cookie_status(validate=False))
+            self.run_on_ui(self.update_runtime_status)
+            self.log(
+                f"Micro-test User-Agent: HTTP {status_code} sur .{domain}, User-Agent validé.",
+                level="info",
+            )
+        except Exception as exc:
+            self.log(f"Micro-test User-Agent non concluant: {exc}", level="debug")
+
     def __init__(self):
         """Initialise l'interface graphique et charge les paramètres"""
         MangaApp.current_instance = self
@@ -2091,6 +2131,7 @@ class MangaApp:
         self.root.after(30, self.process_ui_queue)
         self.update_cookie_status(validate=False)
         self.update_runtime_status()
+        self.root.after(600, self._schedule_startup_ua_probe)
 
         self.log(f"Application démarrée - {APP_NAME} v{APP_VERSION}.", level="info")
         self.root.mainloop()

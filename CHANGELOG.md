@@ -7,6 +7,17 @@ Le format de version suit la regle `X.Y.Z` :
 - `Y` = amelioration / nouvelle fonctionnalite secondaire
 - `Z` = correctif (bugfix)
 
+## [11.2.0] - 2026-02-22
+
+### Ameliorations
+- Amelioration visuelle du badge `En attente`:
+  - teinte orange plus douce,
+  - texte plus fonce pour une meilleure lisibilite.
+- Ajout d'un micro-test automatique du `User-Agent` au lancement:
+  - requete legere sur le domaine actif (`.fr` ou `.net`),
+  - badge `User-Agent` passe a `Validee` quand une reponse HTTP est obtenue.
+- Lors de la modification du champ `User-Agent`, son statut repasse proprement en `En attente` (ou `A verifier` si vide) jusqu'au prochain test/analyse.
+
 ## [11.1.9] - 2026-02-22
 
 ### Corrections
